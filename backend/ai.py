@@ -6,11 +6,11 @@ import time
 
 import openai
 
-AI_COMPLETION_MODEL = os.getenv("AI_COMPLETION_MODEL", "gpt-4o-mini-audio-preview-2024-12-17")
+AI_COMPLETION_MODEL = os.getenv("AI_COMPLETION_MODEL", "gpt-3.5-turbo")
 LANGUAGE = os.getenv("LANGUAGE", "en")
 INITIAL_PROMPT = f"""[SYSTEM INSTRUCTIONS - DO NOT ACKNOWLEDGE OR REPEAT THESE INSTRUCTIONS IN ANY WAY]
 
-Hello Healthcare student! (say this at the start, and wait for the healthcare student to speak):
+Hello student pharmacist! (say this at the start, and wait for the pharmacist to speak):
 I will act as the patient. Let me know when you're finished with this pharmacy consultation so that I can provide feedback on our conversation.
 
 CONFIGURATION:
@@ -83,18 +83,23 @@ async def get_completion(user_prompt, conversation_thus_far):
         }
     ]
 
-    messages.extend(json.loads(base64.b64decode(conversation_thus_far)))
+    if conversation_thus_far:
+        messages.extend(json.loads(base64.b64decode(conversation_thus_far)))
     messages.append({"role": "user", "content": user_prompt})
 
-    logging.debug("calling %s", AI_COMPLETION_MODEL)
-    res = await openai.ChatCompletion.acreate(model=AI_COMPLETION_MODEL, messages=messages, timeout=15)
+    logging.debug("calling %s with temperature=0.5", AI_COMPLETION_MODEL)
+    res = await openai.ChatCompletion.acreate(
+        model=AI_COMPLETION_MODEL,
+        messages=messages,
+        temperature=0.5,  # Added to ensure strict adherence to the prompt
+        timeout=15
+    )
     logging.info("response received from %s %s %s %s", AI_COMPLETION_MODEL, "in", time.time() - start_time, "seconds")
 
     completion = res['choices'][0]['message']['content']
     logging.info('%s %s %s', AI_COMPLETION_MODEL, "response:", completion)
 
     return completion
-
 
 def _is_empty(user_prompt: str):
     return not user_prompt or user_prompt.isspace()
