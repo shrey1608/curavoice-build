@@ -21,6 +21,21 @@ export const onMisfire = () => {
     particleActions.reset();
 };
 
+export const resetConversation = () => {
+    conversationThusFar.length = 0;
+    stopSourceIfNeeded();
+    particleActions.reset();
+    console.log("conversation reset");
+};
+
+export const getConversationHistory = () => {
+    return [...conversationThusFar];
+};
+
+export const getConversationLength = () => {
+    return conversationThusFar.length;
+};
+
 const stopSourceIfNeeded = () => {
     if (source && sourceIsStarted) {
         source.stop(0);
