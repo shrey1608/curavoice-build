@@ -1,31 +1,174 @@
 import {useMicVADWrapper} from "./hooks/useMicVADWrapper";
 import RotateLoader from "react-spinners/RotateLoader";
 import {particleActions} from "./particle-manager.ts";
-import {useState} from "react";
+import {useState, useEffect} from "react";
 import Canvas from "./Canvas.tsx";
-import Dashboard from "./dashboard.tsx";
+import {trackUserSession} from "./lib/supabase.ts";
+import InvestorDashboard from "./InvestorDashboard.tsx";
+import NameCapture from "./NameCapture.tsx";
+import Instructions from "./Instructions.tsx";
+import AdminAuth from "./AdminAuth.tsx";
 
 const App = () => {
     const [loading, setLoading] = useState(true);
     const [isConsultationActive, setIsConsultationActive] = useState(false);
-    const [showDashboard, setShowDashboard] = useState(false);
+    const [sessionId, setSessionId] = useState<string>('');
+    const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+    const [showInvestorDashboard, setShowInvestorDashboard] = useState(false);
+    const [userName, setUserName] = useState<string>('');
+    const [showNameCapture, setShowNameCapture] = useState(true);
+    const [showAdminAuth, setShowAdminAuth] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     const { pause, unpause } = useMicVADWrapper(setLoading, isConsultationActive);
 
-    const handleStartConsultation = () => {
-        setIsConsultationActive(true);
-        unpause();
-        particleActions.reset();
+    // Generate session ID on component mount
+    useEffect(() => {
+        const id = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        setSessionId(id);
+    }, []);
+
+    // Check for admin access via URL parameter
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const adminKey = urlParams.get('admin');
+        if (adminKey === 'curavoice2024admin') {
+            setShowAdminAuth(true);
+        }
+    }, []);
+
+    // Track session end when user leaves the page
+    useEffect(() => {
+        const handleBeforeUnload = async () => {
+            if (sessionId && sessionStartTime && isConsultationActive) {
+                const endTime = new Date();
+                const duration = Math.floor((endTime.getTime() - sessionStartTime.getTime()) / 1000);
+                
+                // Use navigator.sendBeacon for reliable tracking when page is unloading
+                const sessionData = {
+                    session_id: sessionId,
+                    user_name: userName,
+                    started_at: sessionStartTime.toISOString(),
+                    ended_at: endTime.toISOString(),
+                    duration_seconds: duration,
+                    user_agent: navigator.userAgent,
+                };
+
+                try {
+                    await trackUserSession(sessionData);
+                } catch (error) {
+                    // Fallback: try to send with sendBeacon
+                    const formData = new FormData();
+                    formData.append('session_data', JSON.stringify(sessionData));
+                    navigator.sendBeacon('/api/track-session', formData);
+                }
+            }
+        };
+
+        const handleVisibilityChange = async () => {
+            if (document.hidden && sessionId && sessionStartTime && isConsultationActive) {
+                // Page is being hidden, likely user is leaving
+                await handleBeforeUnload();
+            }
+        };
+
+        // Add event listeners
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Cleanup
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+                 };
+     }, [sessionId, sessionStartTime, isConsultationActive, userName]);
+
+     // Periodic session update (heartbeat) to track ongoing sessions
+     useEffect(() => {
+         let heartbeatInterval: NodeJS.Timeout;
+
+         if (isConsultationActive && sessionId && sessionStartTime) {
+             heartbeatInterval = setInterval(async () => {
+                 const currentTime = new Date();
+                 const duration = Math.floor((currentTime.getTime() - sessionStartTime.getTime()) / 1000);
+                 
+                 // Update session with current duration (no end time yet)
+                 try {
+                     await trackUserSession({
+                         session_id: sessionId,
+                         user_name: userName,
+                         started_at: sessionStartTime.toISOString(),
+                         duration_seconds: duration,
+                         user_agent: navigator.userAgent,
+                     });
+                 } catch (error) {
+                     console.error('Heartbeat update failed:', error);
+                 }
+             }, 30000); // Update every 30 seconds
+         }
+
+         return () => {
+             if (heartbeatInterval) {
+                 clearInterval(heartbeatInterval);
+             }
+         };
+     }, [isConsultationActive, sessionId, sessionStartTime, userName]);
+
+     const handleNameSubmit = (name: string) => {
+        setUserName(name);
+        setShowNameCapture(false);
     };
 
-    const handleStopConsultation = () => {
+    const handleAdminAuthSuccess = () => {
+        setIsAuthenticated(true);
+        setShowAdminAuth(false);
+        setShowInvestorDashboard(true);
+    };
+
+    const handleAdminAuthClose = () => {
+        setShowAdminAuth(false);
+        // Clear the admin parameter from URL
+        const url = new URL(window.location.href);
+        url.searchParams.delete('admin');
+        window.history.replaceState({}, '', url.toString());
+    };
+
+    const handleStartConsultation = async () => {
+        setIsConsultationActive(true);
+        const startTime = new Date();
+        setSessionStartTime(startTime);
+        unpause();
+        particleActions.reset();
+
+        // Track session start
+        if (sessionId) {
+            await trackUserSession({
+                session_id: sessionId,
+                user_name: userName,
+                started_at: startTime.toISOString(),
+                user_agent: navigator.userAgent,
+            });
+        }
+    };
+
+    const handleStopConsultation = async () => {
         setIsConsultationActive(false);
         pause();
         particleActions.reset();
-    };
 
-    const toggleDashboard = () => {
-        setShowDashboard(!showDashboard);
+        // Track session end
+        if (sessionId && sessionStartTime) {
+            const endTime = new Date();
+            const duration = Math.floor((endTime.getTime() - sessionStartTime.getTime()) / 1000);
+            await trackUserSession({
+                session_id: sessionId,
+                user_name: userName,
+                started_at: sessionStartTime.toISOString(),
+                ended_at: endTime.toISOString(),
+                duration_seconds: duration,
+                user_agent: navigator.userAgent,
+            });
+        }
     };
 
     if (loading) {
@@ -47,9 +190,17 @@ const App = () => {
         );
     }
 
+    // Show name capture first
+    if (showNameCapture) {
+        return <NameCapture onNameSubmit={handleNameSubmit} />;
+    }
+
     return (
         <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
             <Canvas draw={particleActions.draw}/>
+            
+            {/* Instructions */}
+            <Instructions />
             
             {/* Control Buttons */}
             <div style={{
@@ -93,22 +244,6 @@ const App = () => {
                 >
                     Stop Consultation
                 </button>
-
-                <button
-                    onClick={toggleDashboard}
-                    style={{
-                        backgroundColor: '#5352ed',
-                        color: 'white',
-                        border: 'none',
-                        padding: '12px 24px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        fontWeight: 'bold'
-                    }}
-                >
-                    {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
-                </button>
             </div>
 
             {/* Status Indicator */}
@@ -134,12 +269,19 @@ const App = () => {
                 <span>{isConsultationActive ? 'Consultation Active' : 'Consultation Inactive'}</span>
             </div>
 
-            {/* Dashboard Overlay */}
-            {showDashboard && (
-                <Dashboard 
-                    isConsultationActive={isConsultationActive}
-                    onClose={() => setShowDashboard(false)}
+
+
+            {/* Admin Authentication */}
+            {showAdminAuth && (
+                <AdminAuth 
+                    onAuthSuccess={handleAdminAuthSuccess}
+                    onClose={handleAdminAuthClose}
                 />
+            )}
+
+            {/* Investor Dashboard */}
+            {showInvestorDashboard && isAuthenticated && (
+                <InvestorDashboard onClose={() => setShowInvestorDashboard(false)} />
             )}
         </div>
     );

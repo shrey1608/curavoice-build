@@ -3,7 +3,7 @@ import json
 import time
 import logging
 
-from fastapi import FastAPI, UploadFile, BackgroundTasks, Header
+from fastapi import FastAPI, UploadFile, BackgroundTasks, Header, Form
 from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,20 @@ async def infer(audio: UploadFile, background_tasks: BackgroundTasks,
     logging.info('total processing time: %s %s', time.time() - start_time, 'seconds')
     return FileResponse(path=ai_response_audio_filepath, media_type="audio/mpeg",
                         headers={"text": _construct_response_header(user_prompt_text, ai_response_text)})
+
+
+@app.post("/api/track-session")
+async def track_session_fallback(session_data: str = Form(...)):
+    """Fallback endpoint for session tracking when page is being unloaded"""
+    try:
+        data = json.loads(session_data)
+        logging.info(f"Session tracking fallback: {data.get('session_id')} - {data.get('duration_seconds')}s")
+        # Here you could save to database if needed
+        # For now, just log it
+        return {"status": "logged"}
+    except Exception as e:
+        logging.error(f"Session tracking error: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/")
