@@ -3,12 +3,10 @@ import RotateLoader from "react-spinners/RotateLoader";
 import {particleActions} from "./particle-manager.ts";
 import {useState} from "react";
 import Canvas from "./Canvas.tsx";
-import Dashboard from "./dashboard.tsx";
 
 const App = () => {
     const [loading, setLoading] = useState(true);
     const [isConsultationActive, setIsConsultationActive] = useState(false);
-    const [showDashboard, setShowDashboard] = useState(false);
 
     const { pause, unpause } = useMicVADWrapper(setLoading, isConsultationActive);
 
@@ -22,10 +20,6 @@ const App = () => {
         setIsConsultationActive(false);
         pause();
         particleActions.reset();
-    };
-
-    const toggleDashboard = () => {
-        setShowDashboard(!showDashboard);
     };
 
     if (loading) {
@@ -93,22 +87,6 @@ const App = () => {
                 >
                     Stop Consultation
                 </button>
-
-                <button
-                    onClick={toggleDashboard}
-                    style={{
-                        backgroundColor: '#5352ed',
-                        color: 'white',
-                        border: 'none',
-                        padding: '12px 24px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        fontWeight: 'bold'
-                    }}
-                >
-                    {showDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
-                </button>
             </div>
 
             {/* Status Indicator */}
@@ -133,14 +111,6 @@ const App = () => {
                 }}></div>
                 <span>{isConsultationActive ? 'Consultation Active' : 'Consultation Inactive'}</span>
             </div>
-
-            {/* Dashboard Overlay */}
-            {showDashboard && (
-                <Dashboard 
-                    isConsultationActive={isConsultationActive}
-                    onClose={() => setShowDashboard(false)}
-                />
-            )}
         </div>
     );
 }
