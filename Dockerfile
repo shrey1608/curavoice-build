@@ -1,40 +1,51 @@
-# Use a smaller base image for frontend build
+# Ultra-light build for Railway with minimal memory usage
 FROM node:18-alpine AS frontend_builder
 
 WORKDIR /frontend
 
 # Copy package files
-COPY ./frontend/package.json ./frontend/yarn.lock ./
+COPY ./frontend/package.json ./frontend/package-lock.json* ./frontend/yarn.lock* ./
 
-# Install dependencies with memory optimization
-RUN yarn install --frozen-lockfile --network-timeout 100000
+# Install only production dependencies to reduce memory
+RUN npm ci --only=production --no-audit --no-fund --maxsockets 1
 
-# Copy source files
-COPY ./frontend/ ./
+# Copy source files in stages to reduce memory pressure
+COPY ./frontend/src ./src
+COPY ./frontend/public ./public
+COPY ./frontend/index.html ./
+COPY ./frontend/tsconfig.json ./
+COPY ./frontend/tsconfig.node.json ./
+COPY ./frontend/vite.config.ts ./
 
-# Build with memory optimization for Node.js
-ENV NODE_OPTIONS="--max-old-space-size=1024"
-RUN yarn build
+# Ultra-aggressive memory optimization
+ENV NODE_OPTIONS="--max-old-space-size=384 --optimize-for-size --gc-interval=100"
+RUN npm run build
 
-# Use the Python backend image
-FROM tiangolo/uvicorn-gunicorn-fastapi:python3.10-slim
+# Minimal Python backend
+FROM python:3.10-slim
 
-WORKDIR /
+WORKDIR /app
 
+# Minimize workers for Railway
 ENV MAX_WORKERS=1
+ENV WEB_CONCURRENCY=1
 
-# Install ffmpeg with optimizations for smaller builds
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Skip ffmpeg for now to reduce memory usage during build
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends ffmpeg && \
+#     apt-get clean && \
+#     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY ./backend/requirements.txt /tmp/
-RUN pip install --no-cache-dir --upgrade -r /tmp/requirements.txt
+# Install Python dependencies with minimal overhead
+COPY ./backend/requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
-COPY ./backend /app
+# Copy application code
+COPY ./backend .
 
-# Copy built frontend
-COPY --from=frontend_builder /frontend/dist /app/frontend/dist
+# Copy built frontend with minimal footprint
+COPY --from=frontend_builder /frontend/dist ./frontend/dist
+
+# Use uvicorn directly instead of gunicorn wrapper
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
