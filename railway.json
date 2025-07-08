@@ -1,7 +1,14 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "buildCommand": "docker build -t app ."
+    "buildCommand": "docker build -t app .",
+    "watchPatterns": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.py",
+      "**/*.html",
+      "**/*.css"
+    ]
   },
   "deploy": {
     "numReplicas": 1,
